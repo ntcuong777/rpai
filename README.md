@@ -32,13 +32,15 @@ rpai help          # Show help message
 ## Output Example
 
 ```
-╔══════════════════════════════════════════════════════════════════════╗
-║                        AI Agent Sessions                            ║
-╠══════════════════════════════════════════════════════════════════════╣
-║ [ 1] opencode        | Idle     | 8m       | 0.0%     ║
-║     PID:    69971 | Mem:    749MB                                ║
-║     /Users/rado/Programming/Projects/redpandai                ║
-╚══════════════════════════════════════════════════════════════════════╝
+AI Agent Sessions:
+
+○ [1] opencode | Idle | 2m
+    PID: 70351 | Mem: 419MB | CPU: 0.0%
+    /Users/rado
+
+○ [2] opencode | Idle | 21m
+    PID: 69971 | Mem: 808MB | CPU: 0.0%
+    /Users/rado/Programming/Projects/redpandai
 ```
 
 ## Status Definitions
@@ -52,3 +54,10 @@ rpai help          # Show help message
 - Automatic pane identification
 - Session renaming via tmux
 - Key bindings for quick actions
+
+## Future Enhancements
+
+- Token usage tracking (tokens used, context window, cost estimation)
+- Session activity monitoring (last message, current task)
+- Jump to session functionality
+- Session persistence across restarts
