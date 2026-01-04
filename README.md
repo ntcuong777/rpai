@@ -68,6 +68,7 @@ tmux source ~/.tmux.conf
 ```bash
 rpai                # Interactive TUI (default)
 rpai scan           # List sessions (non-interactive)
+rpai jump <id>      # Jump to session by ID
 rpai kill <id>      # Terminate a session
 rpai theme [name]   # Show/set theme
 rpai help           # Show help

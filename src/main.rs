@@ -1249,6 +1249,25 @@ fn main() -> Result<()> {
                 println!("Use 'rpai scan' to see available sessions");
             }
         }
+        Some("jump") => {
+            if let Some(id_str) = args.get(2) {
+                if let Ok(id) = id_str.parse::<usize>() {
+                    let sessions = scan_ai_processes()?;
+                    if let Some(session) = sessions.get(id.saturating_sub(1)) {
+                        jump_to_session(session)?;
+                    } else {
+                        println!("Invalid ID: {}", id);
+                        println!("Use 'rpai scan' to see available sessions");
+                    }
+                } else {
+                    println!("Invalid ID: {}", id_str);
+                    println!("ID must be a number");
+                }
+            } else {
+                println!("Usage: rpai jump <id>");
+                println!("Use 'rpai scan' to see available sessions");
+            }
+        }
         Some("theme") => {
             if let Some(theme_name) = args.get(2) {
                 if let Some(theme) = ThemeName::from_str(theme_name) {
@@ -1283,6 +1302,7 @@ fn main() -> Result<()> {
             println!("Usage:");
             println!("  rpai                - Interactive TUI (default)");
             println!("  rpai scan           - Scan and display AI agent sessions");
+            println!("  rpai jump <id>      - Jump to session by ID");
             println!("  rpai kill <id>      - Terminate a session");
             println!("  rpai theme [name]   - Show/set theme");
             println!("  rpai help           - Show this help message");
