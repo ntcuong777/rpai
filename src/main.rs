@@ -21,11 +21,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{stdout, Stdout};
-use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration as StdDuration, Instant};
-use sysinfo::{ProcessRefreshKind, System};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 
 // ============================================================================
 // THEMES
@@ -402,12 +401,7 @@ fn find_tmux_pane_for_pid(
 }
 
 fn scan_ai_processes() -> Result<Vec<AiSession>> {
-    let mut system = System::new_all();
-    system.refresh_processes_specifics(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::everything(),
-    );
+    let tmux_panes = get_tmux_pane_info().unwrap_or_default();
 
     let ps_processes = get_process_info_via_ps()?;
     let ps_map: HashMap<u32, ProcessInfo> = ps_processes
@@ -416,94 +410,28 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
         .map(|p| (p.pid, p))
         .collect();
 
-    let tmux_panes = get_tmux_pane_info().unwrap_or_default();
-
     let agent_pattern = Regex::new(r"(?i)(opencode|claude|codex|cursor)")?;
 
-    // First pass: find all matching PIDs
+    // First pass: find all matching PIDs from ps (fast)
     let mut matched_pids: Vec<(u32, ProcessInfo)> = Vec::new();
-    for (pid, process) in system.processes() {
-        let process_info = ps_map.get(&pid.as_u32());
+    for process_info in ps_processes {
+        let comm_lower = process_info.comm.to_lowercase();
+        let cmd_lower = process_info
+            .cmd
+            .as_ref()
+            .map(|c| c.to_lowercase())
+            .unwrap_or_default();
 
-        let (_agent_type, is_match) = if let Some(info) = process_info {
-            let comm_lower = info.comm.to_lowercase();
-            let cmd_lower = info
-                .cmd
-                .as_ref()
-                .map(|c| c.to_lowercase())
-                .unwrap_or_default();
-
-            // Filter out system services
-            if comm_lower.contains("cursoruiviewservice")
-                || cmd_lower.contains("cursoruiviewservice")
-            {
-                continue;
-            }
-
-            let match_comm = agent_pattern.is_match(&comm_lower);
-            let match_cmd = agent_pattern.is_match(&cmd_lower);
-
-            let matched = match_comm || match_cmd;
-            let agent_type = if match_cmd {
-                if cmd_lower.contains("opencode") {
-                    "opencode"
-                } else if cmd_lower.contains("claude") {
-                    "claude"
-                } else if cmd_lower.contains("codex") {
-                    "codex"
-                } else if cmd_lower.contains("cursor") {
-                    "cursor"
-                } else if comm_lower.contains("opencode") {
-                    "opencode"
-                } else if comm_lower.contains("claude") {
-                    "claude"
-                } else if comm_lower.contains("codex") {
-                    "codex"
-                } else if comm_lower.contains("cursor") {
-                    "cursor"
-                } else {
-                    "unknown"
-                }
-            } else if comm_lower.contains("opencode") {
-                "opencode"
-            } else if comm_lower.contains("claude") {
-                "claude"
-            } else if comm_lower.contains("codex") {
-                "codex"
-            } else if comm_lower.contains("cursor") {
-                "cursor"
-            } else {
-                "unknown"
-            };
-
-            (agent_type.to_string(), matched)
-        } else {
-            let cmd = process.name();
-            let cmd_str = match cmd.to_str() {
-                Some(s) => s.to_string(),
-                None => String::from_utf8_lossy(cmd.as_bytes()).to_string(),
-            };
-            let matched = agent_pattern.is_match(&cmd_str.to_lowercase());
-
-            let agent_type = if matched {
-                agent_pattern
-                    .find(&cmd_str.to_lowercase())
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
-            } else {
-                continue;
-            };
-
-            (agent_type, matched)
-        };
-
-        if !is_match {
+        // Filter out system services
+        if comm_lower.contains("cursoruiviewservice") || cmd_lower.contains("cursoruiviewservice") {
             continue;
         }
 
-        // Store matched process with full info
-        if let Some(info) = process_info {
-            matched_pids.push((pid.as_u32(), info.clone()));
+        let match_comm = agent_pattern.is_match(&comm_lower);
+        let match_cmd = agent_pattern.is_match(&cmd_lower);
+
+        if match_comm || match_cmd {
+            matched_pids.push((process_info.pid, process_info));
         }
     }
 
@@ -511,6 +439,18 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
     let matched_pid_set: std::collections::HashSet<u32> =
         matched_pids.iter().map(|(pid, _)| *pid).collect();
     let mut sessions = Vec::new();
+
+    // Now load only matched PIDs into sysinfo (much faster than loading all)
+    let mut system = System::new();
+    let pid_list: Vec<sysinfo::Pid> = matched_pids
+        .iter()
+        .map(|(pid, _)| sysinfo::Pid::from_u32(*pid))
+        .collect();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&pid_list),
+        true,
+        ProcessRefreshKind::everything(),
+    );
 
     for (pid, process_info) in matched_pids {
         // Skip if parent is also an AI agent
@@ -525,7 +465,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
             .map(|c| c.to_lowercase())
             .unwrap_or_default();
 
-        // Determine agent type again
+        // Determine agent type
         let agent_type = if cmd_lower.contains("opencode") {
             "opencode"
         } else if cmd_lower.contains("claude") {
@@ -546,7 +486,6 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
             "unknown"
         };
 
-        // Get process from sysinfo
         let sysinfo_pid = sysinfo::Pid::from_u32(pid);
         if let Some(process) = system.process(sysinfo_pid) {
             let working_dir = process
