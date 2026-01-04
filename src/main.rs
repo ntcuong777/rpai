@@ -1128,11 +1128,22 @@ fn jump_to_session(session: &AiSession) -> Result<()> {
     ) {
         let pane_target = format!("{}:{}.{}", session_name, window_index, pane_id);
 
-        // Use switch-client to switch to the target session/window/pane
-        let output = Command::new("tmux")
-            .args(["switch-client", "-t", &pane_target])
-            .output()
-            .map_err(|e| format!("Failed to execute tmux switch-client command: {}", e))?;
+        // Check if we're inside a tmux session
+        let in_tmux = std::env::var("TMUX").is_ok();
+
+        let output = if in_tmux {
+            // Use switch-client when inside tmux
+            Command::new("tmux")
+                .args(["switch-client", "-t", &pane_target])
+                .output()
+                .map_err(|e| format!("Failed to execute tmux switch-client command: {}", e))?
+        } else {
+            // Use attach-session when outside tmux
+            Command::new("tmux")
+                .args(["attach-session", "-t", &pane_target])
+                .output()
+                .map_err(|e| format!("Failed to execute tmux attach-session command: {}", e))?
+        };
 
         if output.status.success() {
             println!(
