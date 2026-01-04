@@ -9,14 +9,6 @@ readme = "README.md"
 keywords = ["tmux", "tui", "ai", "opencode", "claude"]
 categories = ["command-line-utilities", "development-tools"]
 
-include = [
-    "src/**/*",
-    "rpai.tmux",
-    "Cargo.toml",
-    "README.md",
-    "LICENSE",
-]
-
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installation script for rpai
+# Build script for rpai
 
 set -e
 
@@ -12,9 +12,9 @@ echo ""
 echo "To install globally with cargo (recommended):"
 echo "  cargo install --path ."
 echo ""
-echo "To enable tmux integration, add this to your ~/.tmux.conf:"
+echo "To enable tmux integration, add this line to your ~/.tmux.conf:"
 echo ""
-echo "  run-shell $(pwd)/rpai.tmux"
+echo "  bind-key a display-popup -E \"rpai\""
 echo ""
 echo "Then reload tmux: tmux source ~/.tmux.conf"
 echo ""

@@ -20,8 +20,6 @@ A TUI for managing multiple AI coding agent sessions (opencode, claude, codex, c
 cargo install rpai
 ```
 
-Download `rpai.tmux` from the [GitHub repository](https://github.com/radoslav11/rpai) and add it to the same directory where `rpai` is installed.
-
 ### Option 2: Install from source
 
 ```bash
@@ -47,10 +45,8 @@ This builds the binary to `target/release/rpai`.
 Add this line to your `~/.tmux.conf`:
 
 ```bash
-run-shell /path/to/rpai/rpai.tmux
+bind-key a display-popup -E "rpai"
 ```
-
-Replace `/path/to/rpai` with the actual path to the rpai directory.
 
 Then reload tmux:
 
@@ -103,7 +99,7 @@ Theme is persisted to `~/.config/rpai/theme`
 ## How It Works
 
 1. Scans all processes for AI agent patterns (opencode, claude, codex, cursor)
-2. Walks process tree to find the tmux pane containing each agent
+2. Walks the process tree to find the tmux pane containing each agent
 3. Displays sessions with agent type, PID, state (▶/⏸), uptime, memory usage, tmux location, and working directory
 4. When you select a session, jumps directly to that tmux pane
 5. Auto-refreshes every second to show current CPU usage and session state
