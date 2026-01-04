@@ -297,9 +297,35 @@ fn get_cpu_percentage(pid: u32) -> Option<f64> {
     }
 }
 
-fn get_session_state(pid: u32) -> SessionState {
-    if let Some(cpu_pct) = get_cpu_percentage(pid) {
-        if cpu_pct > 0.1 {
+fn get_pane_cpu_usage(pane_pid: u32) -> Option<f64> {
+    // Get total CPU usage of all processes in the pane's process tree
+    let output = Command::new("ps")
+        .args(["-g", &pane_pid.to_string(), "-o", "pcpu="])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let total: f64 = stdout
+            .lines()
+            .filter_map(|line| line.trim().parse::<f64>().ok())
+            .sum();
+        Some(total)
+    } else {
+        None
+    }
+}
+
+fn get_session_state(pid: u32, pane_pid: Option<u32>) -> SessionState {
+    // If we have a pane PID, check the entire pane's process group CPU usage
+    let cpu_pct = if let Some(pane_pid) = pane_pid {
+        get_pane_cpu_usage(pane_pid)
+    } else {
+        get_cpu_percentage(pid)
+    };
+
+    if let Some(cpu) = cpu_pct {
+        if cpu > 1.0 {
             SessionState::Running
         } else {
             SessionState::Waiting
@@ -379,13 +405,13 @@ fn find_tmux_pane_for_pid(
     pid: u32,
     process_map: &HashMap<u32, ProcessInfo>,
     tmux_panes: &HashMap<u32, TmuxPaneInfo>,
-) -> Option<TmuxPaneInfo> {
+) -> Option<(u32, TmuxPaneInfo)> {
     let mut current_pid = pid;
     let max_steps = 25;
 
     for _ in 0..max_steps {
         if let Some(pane_info) = tmux_panes.get(&current_pid) {
-            return Some(pane_info.clone());
+            return Some((current_pid, pane_info.clone()));
         }
 
         if let Some(process_info) = process_map.get(&current_pid) {
@@ -500,9 +526,10 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
 
             let tmux_info = find_tmux_pane_for_pid(pid, &ps_map, &tmux_panes);
 
-            let (pane_id, session_name, window_index, pane_width, pane_height) =
-                if let Some(info) = tmux_info {
+            let (pane_pid, pane_id, session_name, window_index, pane_width, pane_height) =
+                if let Some((pane_pid, info)) = tmux_info {
                     (
+                        Some(pane_pid),
                         Some(info.pane_id.clone()),
                         Some(info.session_name.clone()),
                         Some(info.window_index),
@@ -510,7 +537,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
                         Some(info.pane_height),
                     )
                 } else {
-                    (None, None, None, None, None)
+                    (None, None, None, None, None, None)
                 };
 
             sessions.push(AiSession {
@@ -525,7 +552,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
                 pane_height,
                 uptime_seconds: uptime.as_secs() as i64,
                 memory_mb,
-                state: get_session_state(pid),
+                state: get_session_state(pid, pane_pid),
             });
         }
     }
