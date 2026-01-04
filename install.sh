@@ -3,7 +3,7 @@
 
 set -e
 
-echo "Installing rpai..."
+echo "Building and installing rpai..."
 cargo install --path .
 
 echo ""
