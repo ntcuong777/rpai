@@ -204,6 +204,12 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
         });
     }
 
+    // Sort sessions for consistent display: by agent type, then by PID
+    sessions.sort_by(|a, b| match a.agent_type.cmp(&b.agent_type) {
+        std::cmp::Ordering::Equal => a.pid.cmp(&b.pid),
+        other => other,
+    });
+
     Ok(sessions)
 }
 
