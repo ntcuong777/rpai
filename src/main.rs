@@ -208,6 +208,9 @@ struct AppConfig {
     /// Refresh interval in milliseconds (default: 50)
     #[serde(default = "default_refresh_ms")]
     refresh_ms: u64,
+    /// Use ASCII symbols instead of unicode (default: false)
+    #[serde(default = "default_ascii_symbols")]
+    ascii_symbols: bool,
 }
 
 fn default_theme() -> String {
@@ -226,6 +229,10 @@ fn default_refresh_ms() -> u64 {
     50
 }
 
+fn default_ascii_symbols() -> bool {
+    false
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -233,6 +240,7 @@ impl Default for AppConfig {
             idle_threshold: default_idle_threshold(),
             prompt_idle_threshold: default_prompt_idle_threshold(),
             refresh_ms: default_refresh_ms(),
+            ascii_symbols: default_ascii_symbols(),
         }
     }
 }
@@ -279,10 +287,22 @@ enum SessionState {
 }
 
 impl SessionState {
-    fn symbol(&self) -> &str {
+    fn symbol(&self, ascii: bool) -> &str {
         match self {
-            SessionState::Running => "▶",
-            SessionState::Waiting => "⏸",
+            SessionState::Running => {
+                if ascii {
+                    ">>"
+                } else {
+                    "▶"
+                }
+            }
+            SessionState::Waiting => {
+                if ascii {
+                    "||"
+                } else {
+                    "⏸"
+                }
+            }
         }
     }
 }
@@ -840,10 +860,12 @@ struct App {
     command_input: String,
     status_message: Option<String>,
     last_refresh: Instant,
+    config: AppConfig,
 }
 
 impl App {
     fn new(sessions: Vec<AiSession>) -> Self {
+        let config = load_config();
         let theme_name = load_theme();
         let theme = Theme::from_name(theme_name);
         let mut list_state = ListState::default();
@@ -861,6 +883,7 @@ impl App {
             command_input: String::new(),
             status_message: None,
             last_refresh: Instant::now(),
+            config,
         }
     }
 
@@ -1020,7 +1043,14 @@ fn ui(frame: &mut Frame, app: &mut App) {
             .enumerate()
             .map(|(i, session)| {
                 let is_selected = app.list_state.selected() == Some(i);
-                create_session_list_item(session, i, is_selected, chunks[1].width, theme)
+                create_session_list_item(
+                    session,
+                    i,
+                    is_selected,
+                    chunks[1].width,
+                    theme,
+                    &app.config,
+                )
             })
             .collect();
 
@@ -1088,6 +1118,7 @@ fn create_session_list_item(
     is_selected: bool,
     width: u16,
     theme: &Theme,
+    config: &AppConfig,
 ) -> ListItem<'static> {
     let prefix = if is_selected { " " } else { "  " };
     let prefix_style = if is_selected {
@@ -1113,7 +1144,7 @@ fn create_session_list_item(
         ),
         Span::styled(" | ", Style::default().fg(theme.dim)),
         Span::styled(
-            session.state.symbol().to_string(),
+            session.state.symbol(config.ascii_symbols).to_string(),
             Style::default().fg(state_color),
         ),
         Span::styled(" ", Style::default().fg(theme.dim)),
@@ -1352,7 +1383,7 @@ fn jump_to_session(session: &AiSession) -> Result<()> {
     Ok(())
 }
 
-fn display_sessions(sessions: &[AiSession]) {
+fn display_sessions(sessions: &[AiSession], config: &AppConfig) {
     if sessions.is_empty() {
         println!("No AI agent processes detected");
         return;
@@ -1366,7 +1397,7 @@ fn display_sessions(sessions: &[AiSession]) {
             "[{}] {} {} | {} | PID: {} | CPU: {:.1}% | MEM: {}MB",
             i + 1,
             session.agent_type,
-            session.state.symbol(),
+            session.state.symbol(config.ascii_symbols),
             format_duration(session.uptime_seconds),
             session.pid,
             session.cpu_percent,
@@ -1432,8 +1463,9 @@ fn main() -> Result<()> {
 
     match args.get(1).map(|s| s.as_str()) {
         Some("scan") => {
+            let config = load_config();
             let sessions = scan_ai_processes()?;
-            display_sessions(&sessions);
+            display_sessions(&sessions, &config);
         }
         Some("kill") => {
             if let Some(id_str) = args.get(2) {
