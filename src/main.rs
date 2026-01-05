@@ -205,6 +205,9 @@ struct AppConfig {
     /// If CPU is below this AND a prompt pattern is detected, consider idle
     #[serde(default = "default_prompt_idle_threshold")]
     prompt_idle_threshold: f64,
+    /// Refresh interval in milliseconds (default: 50)
+    #[serde(default = "default_refresh_ms")]
+    refresh_ms: u64,
 }
 
 fn default_theme() -> String {
@@ -219,12 +222,17 @@ fn default_prompt_idle_threshold() -> f64 {
     5.0
 }
 
+fn default_refresh_ms() -> u64 {
+    50
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
             idle_threshold: default_idle_threshold(),
             prompt_idle_threshold: default_prompt_idle_threshold(),
+            refresh_ms: default_refresh_ms(),
         }
     }
 }
@@ -1174,7 +1182,7 @@ fn create_session_list_item(
     ListItem::new(vec![line1, line2, line3, line4])
 }
 
-fn run_tui(sessions: Vec<AiSession>) -> Result<Option<AiSession>> {
+fn run_tui(sessions: Vec<AiSession>, refresh_ms: u64) -> Result<Option<AiSession>> {
     let mut terminal = setup_terminal()?;
     let mut app = App::new(sessions);
 
@@ -1184,8 +1192,8 @@ fn run_tui(sessions: Vec<AiSession>) -> Result<Option<AiSession>> {
     loop {
         terminal.draw(|frame| ui(frame, &mut app))?;
 
-        // Check for events with 300ms timeout
-        if event::poll(Duration::from_millis(300))? {
+        // Check for events with configurable timeout
+        if event::poll(Duration::from_millis(refresh_ms))? {
             match event::read()? {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
@@ -1548,8 +1556,9 @@ fn main() -> Result<()> {
             println!("Config: ~/.config/rpai/");
         }
         _ => {
+            let config = load_config();
             let sessions = scan_ai_processes()?;
-            if let Some(selected) = run_tui(sessions)? {
+            if let Some(selected) = run_tui(sessions, config.refresh_ms)? {
                 jump_to_session(&selected)?;
             }
         }
