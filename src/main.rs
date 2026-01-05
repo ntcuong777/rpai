@@ -189,43 +189,32 @@ fn ensure_config_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn save_theme(theme: ThemeName) -> Result<()> {
-    let config = ensure_config_dir()?;
-    let path = config.join("theme");
-    fs::write(path, theme.name())?;
-    Ok(())
-}
-
-fn load_theme() -> ThemeName {
-    let path = config_dir().join("theme");
-    if path.exists() {
-        if let Ok(content) = fs::read_to_string(&path) {
-            if let Some(theme) = ThemeName::from_str(content.trim()) {
-                return theme;
-            }
-        }
-    }
-    ThemeName::Gruvbox // default
-}
-
 // ============================================================================
 // APP CONFIG
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AppConfig {
-    /// CPU percentage threshold below which a process is considered idle (default: 5.0)
+    /// Theme name (default: gruvbox)
+    #[serde(default = "default_theme")]
+    theme: String,
+    /// CPU percentage threshold below which a process is considered idle (default: 3.0)
     #[serde(default = "default_idle_threshold")]
     idle_threshold: f64,
 }
 
+fn default_theme() -> String {
+    "gruvbox".to_string()
+}
+
 fn default_idle_threshold() -> f64 {
-    5.0
+    3.0
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
             idle_threshold: default_idle_threshold(),
         }
     }
@@ -240,7 +229,38 @@ fn load_config() -> AppConfig {
             }
         }
     }
+    // Migration: check for legacy theme file
+    let legacy_theme_path = config_dir().join("theme");
+    if legacy_theme_path.exists() {
+        if let Ok(content) = fs::read_to_string(&legacy_theme_path) {
+            if let Some(theme) = ThemeName::from_str(content.trim()) {
+                return AppConfig {
+                    theme: theme.name().to_string(),
+                    ..Default::default()
+                };
+            }
+        }
+    }
     AppConfig::default()
+}
+
+fn save_config(config: &AppConfig) -> Result<()> {
+    let dir = ensure_config_dir()?;
+    let path = dir.join("config.json");
+    let content = serde_json::to_string_pretty(config)?;
+    fs::write(path, content)?;
+    Ok(())
+}
+
+fn load_theme() -> ThemeName {
+    let config = load_config();
+    ThemeName::from_str(&config.theme).unwrap_or(ThemeName::Gruvbox)
+}
+
+fn save_theme(theme: ThemeName) -> Result<()> {
+    let mut config = load_config();
+    config.theme = theme.name().to_string();
+    save_config(&config)
 }
 
 // ============================================================================
@@ -317,21 +337,6 @@ fn get_process_info_via_ps() -> Result<Vec<ProcessInfo>> {
     Ok(processes)
 }
 
-fn get_cpu_percentage(pid: u32) -> Option<f64> {
-    let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "pcpu="])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let cpu_str = stdout.trim();
-        cpu_str.parse::<f64>().ok()
-    } else {
-        None
-    }
-}
-
 fn get_descendant_pids(pid: u32, ps_output: &str) -> Vec<u32> {
     // Parse ps output to build parent->children map
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -360,7 +365,7 @@ fn get_descendant_pids(pid: u32, ps_output: &str) -> Vec<u32> {
     result
 }
 
-fn get_pane_cpu_usage(pane_pid: u32) -> Option<f64> {
+fn get_process_tree_cpu_usage(pid: u32) -> Option<f64> {
     // Get all processes with their parent PIDs
     let ps_output = Command::new("ps")
         .args(["-axo", "pid,ppid"])
@@ -372,9 +377,9 @@ fn get_pane_cpu_usage(pane_pid: u32) -> Option<f64> {
     }
 
     let ps_str = String::from_utf8_lossy(&ps_output.stdout);
-    let descendant_pids = get_descendant_pids(pane_pid, &ps_str);
+    let descendant_pids = get_descendant_pids(pid, &ps_str);
 
-    // Get CPU usage for all descendant PIDs
+    // Get CPU usage for all descendant PIDs (includes the pid itself)
     let pid_args: Vec<String> = descendant_pids.iter().map(|p| p.to_string()).collect();
     let output = Command::new("ps")
         .args(["-p", &pid_args.join(","), "-o", "pcpu="])
@@ -393,13 +398,9 @@ fn get_pane_cpu_usage(pane_pid: u32) -> Option<f64> {
     }
 }
 
-fn get_session_state(pid: u32, pane_pid: Option<u32>, idle_threshold: f64) -> SessionState {
-    // If we have a pane PID, check the entire pane's process group CPU usage
-    let cpu_pct = if let Some(pane_pid) = pane_pid {
-        get_pane_cpu_usage(pane_pid)
-    } else {
-        get_cpu_percentage(pid)
-    };
+fn get_session_state(pid: u32, idle_threshold: f64) -> SessionState {
+    // Check CPU usage of the AI agent process and all its descendants
+    let cpu_pct = get_process_tree_cpu_usage(pid);
 
     if let Some(cpu) = cpu_pct {
         if cpu > idle_threshold {
@@ -604,10 +605,9 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
 
             let tmux_info = find_tmux_pane_for_pid(pid, &ps_map, &tmux_panes);
 
-            let (pane_pid, pane_id, session_name, window_index, pane_width, pane_height) =
-                if let Some((pane_pid, info)) = tmux_info {
+            let (pane_id, session_name, window_index, pane_width, pane_height) =
+                if let Some((_pane_pid, info)) = tmux_info {
                     (
-                        Some(pane_pid),
                         Some(info.pane_id.clone()),
                         Some(info.session_name.clone()),
                         Some(info.window_index),
@@ -615,7 +615,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
                         Some(info.pane_height),
                     )
                 } else {
-                    (None, None, None, None, None, None)
+                    (None, None, None, None, None)
                 };
 
             sessions.push(AiSession {
@@ -630,7 +630,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
                 pane_height,
                 uptime_seconds: uptime.as_secs() as i64,
                 memory_mb,
-                state: get_session_state(pid, pane_pid, config.idle_threshold),
+                state: get_session_state(pid, config.idle_threshold),
             });
         }
     }

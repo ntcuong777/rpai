@@ -90,26 +90,22 @@ rpai help           # Show help
 - **tokyo** - Tokyo Night purple/blue
 - **solarized** - Classic solarized dark
 
-Theme is persisted to `~/.config/rpai/theme`
-
 ## Configuration
 
-Config directory: `~/.config/rpai/`
-
-**Files:**
-- `theme` - Current theme name
-- `config.json` - Application settings
+Config file: `~/.config/rpai/config.json`
 
 **Example `config.json`:**
 
 ```json
 {
-  "idle_threshold": 5.0
+  "theme": "gruvbox",
+  "idle_threshold": 3.0
 }
 ```
 
 **Options:**
-- `idle_threshold` - CPU percentage threshold below which a process is considered idle/waiting (default: `5.0`). Processes above this threshold show as running (▶), below as waiting (⏸).
+- `theme` - Color theme (default: `"gruvbox"`). Options: gruvbox, nord, catppuccin, dracula, tokyo, solarized.
+- `idle_threshold` - CPU percentage threshold below which a process is considered idle/waiting (default: `3.0`). Processes above this threshold show as running (▶), below as waiting (⏸).
 
 ## License
 
