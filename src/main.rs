@@ -402,7 +402,9 @@ const LSP_PATTERNS: &[&str] = &[
 
 fn is_lsp_process(command: &str) -> bool {
     let cmd_lower = command.to_lowercase();
-    LSP_PATTERNS.iter().any(|pattern| cmd_lower.contains(pattern))
+    LSP_PATTERNS
+        .iter()
+        .any(|pattern| cmd_lower.contains(pattern))
 }
 
 fn get_process_tree_cpu_usage(pid: u32) -> Option<f64> {
@@ -568,7 +570,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
         .map(|p| (p.pid, p))
         .collect();
 
-    let agent_pattern = Regex::new(r"(?i)(opencode|claude|codex|cursor)")?;
+    let agent_pattern = Regex::new(r"(?i)(opencode|claude|codex|cursor|gemini)")?;
 
     // First pass: find all matching PIDs from ps (fast)
     let mut matched_pids: Vec<(u32, ProcessInfo)> = Vec::new();
@@ -632,6 +634,8 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
             "codex"
         } else if cmd_lower.contains("cursor") {
             "cursor"
+        } else if cmd_lower.contains("gemini") {
+            "gemini"
         } else if comm_lower.contains("opencode") {
             "opencode"
         } else if comm_lower.contains("claude") {
@@ -640,6 +644,8 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
             "codex"
         } else if comm_lower.contains("cursor") {
             "cursor"
+        } else if comm_lower.contains("gemini") {
+            "gemini"
         } else {
             "unknown"
         };
@@ -669,8 +675,7 @@ fn scan_ai_processes() -> Result<Vec<AiSession>> {
                     (None, None, None, None, None)
                 };
 
-            let (state, cpu_percent) =
-                get_session_state_and_cpu(pid, config.idle_threshold);
+            let (state, cpu_percent) = get_session_state_and_cpu(pid, config.idle_threshold);
 
             sessions.push(AiSession {
                 pid,
